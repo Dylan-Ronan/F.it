@@ -20,25 +20,23 @@ const db = pgp({
     database: process.env.DB_NAME,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD
-})
+});
 
-
-
-////////////////////////////////////////////////////// Routes used to fetch items owned by a user /////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////// Route used to fetch items belonging to a user /////////////////////////////////////////////////////////////////////////
 
 /*
 @author: Zachary
 @creation_date: 3/18/26
 @last_updated: 3/18/26
-@description: This is used to generate a list of all the clothing that belongs to a particular user.
+@description: This is used to generate a list of all the clothing that belongs to a particular user, filtered by the clothing type.
 */
-app.get('/user/:userID/clothing', async (req, res) => {
+app.get('/user/:userID/:type', async (req, res) => {
     try{
-        const { userID } = req.params;
+        const { userID, type } = req.params;
 
         const shirts = await db.manyOrNone(
-            `SELECT * FROM "Item" WHERE "Owner" = $1;`,
-            [userID]
+            `SELECT * FROM "Item" WHERE "Owner" = $1 AND "Type" = $2;`,
+            [userID, type]
         );
 
         res.status(200).json({ success: true, shirts });
@@ -49,122 +47,7 @@ app.get('/user/:userID/clothing', async (req, res) => {
     }
 });
 
-/*
-@author: Zachary
-@creation_date: 3/18/26
-@last_updated: 3/18/26
-@description: This is used to generate a list of all the shirts that belongs to a particular user.
-*/
-app.get('/user/:userID/shirts', async (req, res) => {
-    try{
-        const { userID } = req.params;
-
-        const shirts = await db.manyOrNone(
-            `SELECT * FROM "Item" WHERE "Owner" = $1 AND "Type" = 'Shirt';`,
-            [userID]
-        );
-
-        res.status(200).json({ success: true, shirts });
-    }
-    catch (error) {
-        console.error('ERROR:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/*
-@author: Zachary
-@creation_date: 3/18/26
-@last_updated: 3/18/26
-@description: This is used to generate a list of all the pants that belongs to a particular user.
-*/
-app.get('/user/:userID/pants', async (req, res) => {
-    try{
-        const { userID } = req.params;
-
-        const pants = await db.manyOrNone(
-            `SELECT * FROM "Item" WHERE "Owner" = $1 AND "Type" = 'Pants';`,
-            [userID]
-        );
-
-        res.status(200).json({ success: true, pants });
-    }
-    catch (error) {
-        console.error('ERROR:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/*
-@author: Zachary
-@creation_date: 3/18/26
-@last_updated: 3/18/26
-@description: This is used to generate a list of all the shoes that belongs to a particular user.
-*/
-app.get('/user/:userID/shoes', async (req, res) => {
-    try{
-        const { userID } = req.params;
-
-        const pants = await db.manyOrNone(
-            `SELECT * FROM "Item" WHERE "Owner" = $1 AND "Type" = 'Shoes';`,
-            [userID]
-        );
-
-        res.status(200).json({ success: true, pants });
-    }
-    catch (error) {
-        console.error('ERROR:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/*
-@author: Zachary
-@creation_date: 3/18/26
-@last_updated: 3/18/26
-@description: This is used to generate a list of all the shoes that belongs to a particular user.
-*/
-app.get('/user/:userID/outerwear', async (req, res) => {
-    try{
-        const { userID } = req.params;
-
-        const pants = await db.manyOrNone(
-            `SELECT * FROM "Item" WHERE "Owner" = $1 AND "Type" = 'Outerwear';`,
-            [userID]
-        );
-
-        res.status(200).json({ success: true, pants });
-    }
-    catch (error) {
-        console.error('ERROR:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-/*
-@author: Zachary
-@creation_date: 3/18/26
-@last_updated: 3/18/26
-@description: This is used to generate a list of all the shoes that belongs to a particular user.
-*/
-app.get('/user/:userID/accessories', async (req, res) => {
-    try{
-        const { userID } = req.params;
-
-        const pants = await db.manyOrNone(
-            `SELECT * FROM "Item" WHERE "Owner" = $1 AND "Type" = 'Accessory';`,
-            [userID]
-        );
-
-        res.status(200).json({ success: true, pants });
-    }
-    catch (error) {
-        console.error('ERROR:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
-////////////////////////////////////////////////////// Routes used to fetch items owned by a user /////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////// Routes used to fetch items belonging to a user /////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////// Routes used to generate an outfit for the user //////////////////////////////////////////////////////////////////////
 
@@ -233,8 +116,8 @@ app.get('/weather', async (req, res) => {
     }
 });
 
-app.get('/user/:userID/casual_outfit', async(req, res) => {
-    const { userID } = req.params;
+app.get('/generateOutfit/:userID/:style', async(req, res) => {
+    const { userID , style } = req.params;
     try {
         // Get the client's IP (handle proxies with x-forwarded-for)
         ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -267,11 +150,11 @@ app.get('/user/:userID/casual_outfit', async(req, res) => {
             AND "Type" = 'Shirt'
             AND "Minimum Temperature" <= $2
             AND "Maximum Temperature" >= $2
-            AND "Styles" like '%Casual%'
+            AND "Styles" like '%' || $3 || '%'
             ORDER BY RANDOM()
             LIMIT 1;
             `,
-            [userID, avgTemp]
+            [userID, avgTemp, style]
         );
 
         const pants = await db.one(
@@ -281,11 +164,11 @@ app.get('/user/:userID/casual_outfit', async(req, res) => {
             AND "Type" = 'Pants'
             AND "Minimum Temperature" <= $2
             AND "Maximum Temperature" >= $2
-            AND "Styles" like '%Casual%'
+            AND "Styles" like '%' || $3 || '%'
             ORDER BY RANDOM()
             LIMIT 1;
             `,
-            [userID, avgTemp]
+            [userID, avgTemp, style]
         );
 
         const shoes = await db.one(
@@ -296,11 +179,11 @@ app.get('/user/:userID/casual_outfit', async(req, res) => {
             AND "Type" = 'Shoes'
             AND "Minimum Temperature" <= $2
             AND "Maximum Temperature" >= $2
-            AND "Styles" like '%Casual%'
+            AND "Styles" like '%' || $3 || '%'
             ORDER BY RANDOM()
             LIMIT 1;
             `,
-            [userID, avgTemp]
+            [userID, avgTemp, style]
         );
 
         res.status(200).json({ success: true, avgTemp, shirt , pants, shoes});
@@ -312,7 +195,6 @@ app.get('/user/:userID/casual_outfit', async(req, res) => {
 });
 
 ////////////////////////////////////////////////////// Routes used to generate an outfit for the user //////////////////////////////////////////////////////////////////////
-
 
 app.listen(PORT, () => {
     console.log(`Server is listening at http://localhost:${PORT}`);
