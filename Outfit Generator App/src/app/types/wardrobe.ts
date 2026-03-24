@@ -10,6 +10,8 @@ export interface ClothingItem {
   colors: Color[];
   style: EventType[];
   imageUrl?: string;
+  minTemp?: number;
+  maxTemp?: number;
 }
 
 export interface DailyPlan {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Camera, Upload } from 'lucide-react';
+import { Camera, Upload, Sparkles } from 'lucide-react';
 import { ClothingItem, ClothingCategory, EventType, Color } from '../types/wardrobe';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Checkbox } from './ui/checkbox';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { analyzeClothingImage } from '../utils/geminiService';
 
 interface AddClothingWithPhotoProps {
   onAddItem: (item: Omit<ClothingItem, 'id'>) => void;
@@ -54,44 +55,75 @@ export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
   const [selectedColors, setSelectedColors] = useState<Color[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<EventType[]>([]);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [minTemp, setMinTemp] = useState<number>(60);
+  const [maxTemp, setMaxTemp] = useState<number>(80);
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
       setPhoto(url);
+      setUploadedFile(file);
+      setIsAnalyzing(true);
+
+      try {
+        const analysis = await analyzeClothingImage(file);
+
+        // Auto-populate form fields with AI analysis
+        setName(analysis.name);
+        setCategory(analysis.category as ClothingCategory);
+
+        // Map AI colors to our predefined colors
+        const mappedColors = analysis.colors
+          .map(color => color.toLowerCase())
+          .filter(color => colors.some(c => c.value === color))
+          .map(color => color as Color);
+        setSelectedColors(mappedColors);
+
+        // Map AI styles to our predefined event types
+        const mappedStyles = analysis.styles
+          .map(style => style.toLowerCase())
+          .filter(style => eventTypes.some(e => e.value === style))
+          .map(style => style as EventType);
+        setSelectedStyles(mappedStyles);
+
+        setMinTemp(analysis.minTemp);
+        setMaxTemp(analysis.maxTemp);
+      } catch (error) {
+        console.error('Failed to analyze image:', error);
+        // Keep default values if analysis fails
+      } finally {
+        setIsAnalyzing(false);
+      }
     }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name && selectedColors.length > 0 && selectedStyles.length > 0) {
+    if (name) {
       onAddItem({
         name,
         category,
         colors: selectedColors,
         style: selectedStyles,
         imageUrl: photo || undefined,
+        minTemp,
+        maxTemp,
       });
       setName('');
       setSelectedColors([]);
       setSelectedStyles([]);
       setPhoto(null);
+      setUploadedFile(null);
+      setMinTemp(60);
+      setMaxTemp(80);
       setOpen(false);
     }
   };
 
-  const toggleColor = (color: Color) => {
-    setSelectedColors(prev =>
-      prev.includes(color) ? prev.filter(c => c !== color) : [...prev, color]
-    );
-  };
 
-  const toggleStyle = (style: EventType) => {
-    setSelectedStyles(prev =>
-      prev.includes(style) ? prev.filter(s => s !== style) : [...prev, style]
-    );
-  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -119,6 +151,7 @@ export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
                   <Upload className="w-8 h-8 text-gray-400 mb-2" />
                   <p className="text-sm text-gray-500">Click to upload photo</p>
+                  <p className="text-xs text-purple-600 mt-1">AI will analyze and auto-fill details</p>
                 </div>
                 <input
                   id="photo-upload"
@@ -140,10 +173,22 @@ export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
                   variant="secondary"
                   size="sm"
                   className="absolute top-2 right-2"
-                  onClick={() => setPhoto(null)}
+                  onClick={() => {
+                    setPhoto(null);
+                    setUploadedFile(null);
+                    setIsAnalyzing(false);
+                  }}
                 >
                   Change Photo
                 </Button>
+                {isAnalyzing && (
+                  <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
+                    <div className="flex items-center space-x-2 text-white">
+                      <Sparkles className="w-5 h-5 animate-spin" />
+                      <span>Analyzing with AI...</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -175,50 +220,35 @@ export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Colors</Label>
-            <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
-              {colors.map(color => (
-                <div key={color.value} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`color-${color.value}`}
-                    checked={selectedColors.includes(color.value)}
-                    onCheckedChange={() => toggleColor(color.value)}
-                  />
-                  <label
-                    htmlFor={`color-${color.value}`}
-                    className="text-sm cursor-pointer"
-                  >
-                    {color.label}
-                  </label>
-                </div>
-              ))}
+          {(selectedColors.length > 0 || selectedStyles.length > 0 || !isAnalyzing) && (
+            <div className="rounded-lg border border-gray-200 p-3 bg-gray-50">
+              <p className="text-sm font-medium text-gray-700 mb-2">Detected attributes</p>
+              <div className="text-sm text-gray-600 space-y-1">
+                <p>
+                  <span className="font-semibold">Colors:</span>{' '}
+                  {selectedColors.length > 0 ? selectedColors.join(', ') : 'n/a'}
+                </p>
+                <p>
+                  <span className="font-semibold">Style:</span>{' '}
+                  {selectedStyles.length > 0 ? selectedStyles.join(', ') : 'n/a'}
+                </p>
+                <p>
+                  <span className="font-semibold">Temperature Range:</span>{' '}
+                  {minTemp}°F - {maxTemp}°F
+                </p>
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="space-y-2">
-            <Label>Suitable For</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {eventTypes.map(event => (
-                <div key={event.value} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={`style-${event.value}`}
-                    checked={selectedStyles.includes(event.value)}
-                    onCheckedChange={() => toggleStyle(event.value)}
-                  />
-                  <label
-                    htmlFor={`style-${event.value}`}
-                    className="text-sm cursor-pointer"
-                  >
-                    {event.label}
-                  </label>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <Button type="submit" className="w-full">
-            Add to Wardrobe
+          <Button type="submit" className="w-full" disabled={isAnalyzing}>
+            {isAnalyzing ? (
+              <>
+                <Sparkles className="w-4 h-4 mr-2 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              'Add to Wardrobe'
+            )}
           </Button>
         </form>
       </DialogContent>
