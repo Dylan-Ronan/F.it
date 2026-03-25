@@ -1,5 +1,9 @@
 const express = require('express');
-const geoip = require('geoip-lite'); // Used to get the current user's location
+const geoip = require('geoip-lite');                                // Used to get the current user's location
+
+const session = require('express-session');                         // Used for Google OAuth
+const passport = require('passport');                               // Used for Google OAuth
+const GoogleStrategy = require('passport-google-oauth20').Strategy; // Used for Google OAuth
 const app = express();
 const PORT = 3000;
 const pgp = require('pg-promise')(/* options */);
@@ -24,7 +28,75 @@ const db = pgp({
 
 ////////////////////////////////////////////////////// Routes used for Google oAuth //////////////////////////////////////////////////////////////////////////////////////////
 
+app.use(session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((user, done) => done(null, user));
+
+passport.use(new GoogleStrategy({
+    clientID:     process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    callbackURL:  '/auth/google/callback',
+    },
+    async (accessToken, refreshToken, profile, done) => {
+        try {
+            const email = profile.emails[0].value;
+
+            // pg-promise uses .oneOrNone() instead of .query()
+            const existing = await db.oneOrNone(
+                'SELECT * FROM "User" WHERE email = $1',
+                [email]
+            );
+
+            let user;
+
+            if (existing) {
+                // User already exists
+                user = existing;
+            } else {
+                // Insert new user
+                user = await db.one(
+                    'INSERT INTO "User" (google_id, email, name, photo) VALUES ($1, $2, $3, $4) RETURNING *',
+                    [profile.id, email, profile.displayName, profile.photos[0].value]
+                );
+            }
+
+            return done(null, user);
+        } catch (err) {
+            console.error('OAuth DB error:', err);
+            return done(err, null);
+        }
+    }
+));
+
+// 1. Kick off the OAuth flow
+app.get('/auth/google',
+    passport.authenticate('google', { scope: ['profile', 'email'] })
+);
+
+// 2. Google redirects back here
+app.get('/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/login' }),
+    (req, res) => {
+        res.redirect('/dashboard');
+    }
+);
+
+// 3. Logout
+app.get('/logout', (req, res) => {
+    req.logout(() => res.redirect('/'));
+});
+
+function isAuthenticated(req, res, next) {
+    if (req.isAuthenticated()) return next();
+    res.status(401).json({ error: 'Not authenticated' });
+}
 
 ////////////////////////////////////////////////////// Routes used for Google oAuth //////////////////////////////////////////////////////////////////////////////////////////
 
