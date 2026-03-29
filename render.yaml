@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: fit-app
+    runtime: node
+    branch: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: WEATHER_DOT_COM_KEY
+        sync: false
+      - key: TEST_IP_ADDRESS
+        sync: false
