@@ -26,8 +26,14 @@ const db = pgp({
     password: process.env.DB_PASSWORD
 });
 
-////////////////////////////////////////////////////// Routes used for Google oAuth //////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////// Routes used to handle user information ////////////////////////////////////////////////////////////////////////////////
 
+/*
+@author: Zachary
+@creation_date: 3/25/26
+@last_updated: 3/18/26
+@description: The methods below are all used for Google OAuth. This was low-key vibe-coded but at least it works.
+*/
 app.use(session({
     secret: process.env.SESSION_SECRET,
     resave: false,
@@ -35,10 +41,8 @@ app.use(session({
 }));
 app.use(passport.initialize());
 app.use(passport.session());
-
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((user, done) => done(null, user));
-
 passport.use(new GoogleStrategy({
     clientID:     process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -74,12 +78,10 @@ passport.use(new GoogleStrategy({
         }
     }
 ));
-
 // 1. Kick off the OAuth flow
 app.get('/auth/google',
     passport.authenticate('google', { scope: ['profile', 'email'] })
 );
-
 // 2. Google redirects back here
 app.get('/auth/google/callback',
     passport.authenticate('google', { failureRedirect: '/login' }),
@@ -87,18 +89,40 @@ app.get('/auth/google/callback',
         res.redirect('/dashboard');
     }
 );
-
 // 3. Logout
 app.get('/logout', (req, res) => {
     req.logout(() => res.redirect('/'));
 });
-
 function isAuthenticated(req, res, next) {
     if (req.isAuthenticated()) return next();
     res.status(401).json({ error: 'Not authenticated' });
 }
 
-////////////////////////////////////////////////////// Routes used for Google oAuth //////////////////////////////////////////////////////////////////////////////////////////
+/*
+@author: Zachary
+@creation_date: 3/28/26
+@last_updated: 3/18/26
+@description: This route is used to update a user's preferences, typically done during account creation
+*/
+app.put('/user/:userID/preferences', async (req, res) => {
+    try {
+        const { userID } = req.params;
+        const { colors, styles } = req.body;
+
+        const result = await db.oneOrNone(
+            `UPDATE "User" SET "favorite_colors" = $1, "favorite_styles" = $2 WHERE "UID" = $3 RETURNING "UID"`,
+            [colors, styles, parseInt(userID)]
+        );
+
+        res.status(200).json({ success: true, user: result });
+    }
+    catch (error) {
+        console.error('ERROR:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+////////////////////////////////////////////////////// Routes used to handle user information ////////////////////////////////////////////////////////////////////////////////
 
 ////////////////////////////////////////////////////// Route used to fetch items belonging to a user /////////////////////////////////////////////////////////////////////////
 
@@ -166,7 +190,7 @@ app.get('/weather', async (req, res) => {
         // Get the client's IP (handle proxies with x-forwarded-for)
         ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
-        // Check to see if the program is running on a local host. If it use, use Lehigh University's IP
+        // Check to see if the program is running on a local host. Use Lehigh University's IP as a default if it is
         if (ip === '::ffff:127.0.0.1') {
             ip = process.env.TEST_IP_ADDRESS;
         }
@@ -225,28 +249,28 @@ app.get('/generateOutfit/:userID/:style', async(req, res) => {
             SELECT "Name", "Image_url"
             FROM "Item"
             WHERE "Owner" = $1
-            AND "Type" = 'Shirt'
-            AND "Minimum Temperature" <= $2
-            AND "Maximum Temperature" >= $2
+            AND "Type" = 'shirt'
+            AND "Minimum_Temperature" <= $2
+            AND "Maximum_Temperature" >= $2
             AND "Styles" like '%' || $3 || '%'
             ORDER BY RANDOM()
             LIMIT 1;
             `,
-            [userID, avgTemp, style]
+            [parseInt(userID), avgTemp, style]
         );
 
         const pants = await db.one(
             `
             SELECT "Name", "Image_url" FROM "Item"
             WHERE "Owner" = $1
-            AND "Type" = 'Pants'
-            AND "Minimum Temperature" <= $2
-            AND "Maximum Temperature" >= $2
+            AND "Type" = 'pants'
+            AND "Minimum_Temperature" <= $2
+            AND "Maximum_Temperature" >= $2
             AND "Styles" like '%' || $3 || '%'
             ORDER BY RANDOM()
             LIMIT 1;
             `,
-            [userID, avgTemp, style]
+            [parseInt(userID), avgTemp, style]
         );
 
         const shoes = await db.one(
@@ -254,14 +278,14 @@ app.get('/generateOutfit/:userID/:style', async(req, res) => {
             SELECT "Name", "Image_url"
             FROM "Item"
             WHERE "Owner" = $1
-            AND "Type" = 'Shoes'
-            AND "Minimum Temperature" <= $2
-            AND "Maximum Temperature" >= $2
+            AND "Type" = 'shoe'
+            AND "Minimum_Temperature" <= $2
+            AND "Maximum_Temperature" >= $2
             AND "Styles" like '%' || $3 || '%'
             ORDER BY RANDOM()
             LIMIT 1;
             `,
-            [userID, avgTemp, style]
+            [parseInt(userID), avgTemp, style]
         );
 
         res.status(200).json({ success: true, avgTemp, shirt , pants, shoes});
