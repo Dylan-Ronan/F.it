@@ -30,16 +30,16 @@ export async function analyzeClothingImage(imageFile: File): Promise<ClothingAna
     // Convert image to base64
     const imageData = await fileToBase64(imageFile);
 
-    const prompt = `Analyze this clothing item image and provide a JSON response with the following structure:\n` +
+    const prompt = `Analyze this clothing item image and provide only a JSON response with the following structure:\n` +
       `{\n` +
       `  "name": "descriptive name of the clothing item",\n` +
       `  "category": "tops|bottoms|shoes|outerwear|accessories",\n` +
       `  "colors": ["array of primary colors present, up to 3 in the otder primary, secondary, and tertiary colors"],\n` +
-      `  "styles": ["array of suitable occasions/styles like work, casual, formal, workout, date, outdoor"],\n` +
+      `  "style": ["most suitable occasion/style like work, casual, formal, workout, date, outdoor"],\n` +
       `  "minTemp": minimum comfortable temperature in Fahrenheit,\n` +
       `  "maxTemp": maximum comfortable temperature in Fahrenheit\n` +
       `}\n` +
-      `Return only valid JSON, no explanatory textx`;
+      `Return only valid JSON, no explanatory text, do not return anything `;
 
     const request = {
       contents: [
