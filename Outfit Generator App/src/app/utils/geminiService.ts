@@ -39,7 +39,7 @@ export async function analyzeClothingImage(imageFile: File): Promise<ClothingAna
       `  "minTemp": minimum comfortable temperature in Fahrenheit,\n` +
       `  "maxTemp": maximum comfortable temperature in Fahrenheit\n` +
       `}\n` +
-      `Return only valid JSON, no explanatory text, do not return anything `;
+      `Return only valid JSON, no explanatory text, do not return anything else or `;
 
     const request = {
       contents: [
