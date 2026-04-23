@@ -191,17 +191,43 @@ export const api = {
       return response.json();
     },
 
-    // Analyze clothing image with AI
-    analyzeImage: async (userID: string, imageBase64: string) => {
-      const response = await fetch(`${API_BASE_URL}/analyzeimage/${userID}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ imagePath: imageBase64 }),
-      });
-      return response.json();
+    // Analyze clothing image with AI. Retries on Gemini failure with exponential backoff.
+    analyzeImage: async (userID: string, imageBase64: string, maxRetries = 3) => {
+      let lastResult: any = null;
+      let lastError: unknown = null;
+
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/analyzeimage/${userID}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ imagePath: imageBase64 }),
+          });
+          const data = await response.json();
+          if (response.ok && data?.success && data?.analysis) {
+            if (attempt > 0) {
+              console.info(`analyzeImage succeeded on retry ${attempt}`);
+            }
+            return data;
+          }
+          lastResult = data;
+          console.warn(`analyzeImage attempt ${attempt + 1} failed:`, data);
+        } catch (err) {
+          lastError = err;
+          console.warn(`analyzeImage attempt ${attempt + 1} threw:`, err);
+        }
+
+        if (attempt < maxRetries) {
+          const delayMs = Math.min(1000 * 2 ** attempt, 8000);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+
+      return lastResult ?? {
+        success: false,
+        error: lastError instanceof Error ? lastError.message : 'Analysis failed after retries',
+      };
     },
   },
 

@@ -48,104 +48,142 @@ const colors: { value: Color; label: string }[] = [
   { value: 'other', label: 'Other' },
 ];
 
+const categoryMap: Record<string, ClothingCategory> = {
+  'top': 'tops',
+  'tops': 'tops',
+  'bottom': 'bottoms',
+  'bottoms': 'bottoms',
+  'shoe': 'shoes',
+  'shoes': 'shoes',
+  'coat': 'outerwear',
+  'outerwear': 'outerwear',
+  'accessory': 'accessories',
+  'accessories': 'accessories',
+  'umbrella': 'accessories',
+};
+
+function readFileAsDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+type FailedUpload = { name: string; dataUrl: string; reason: string };
+
 export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
   const [open, setOpen] = useState(false);
   const [photo, setPhoto] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ current: number; total: number; succeeded: number } | null>(null);
+  const [failures, setFailures] = useState<FailedUpload[]>([]);
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processOne = async (
+    fileName: string,
+    dataUrl: string,
+    userID: string | null,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> => {
+    setPhoto(dataUrl);
+
+    if (userID === 'demo-user-123') {
+      onAddItem({
+        name: fileName.replace(/\.[^.]+$/, '') || 'New Item',
+        category: 'tops',
+        colors: ['other'],
+        style: ['casual'],
+        imageUrl: dataUrl,
+      });
+      return { ok: true };
+    }
+
+    if (!userID) {
+      return { ok: false, reason: 'User not authenticated' };
+    }
+
+    const response = await api.user.analyzeImage(userID, dataUrl);
+    if (!response.success || !response.analysis) {
+      return { ok: false, reason: response.error || 'AI analysis failed' };
+    }
+
+    const analysis = response.analysis;
+    onAddItem({
+      name: analysis.name || 'New Item',
+      category: categoryMap[analysis.category] || 'tops',
+      colors: (analysis.colors ?? []).map((c: string) => c.toLowerCase() as Color),
+      style: (analysis.styles ?? []).map((s: string) => s.toLowerCase() as EventType),
+      styles2: analysis.styles2?.map((s: string) => s.toLowerCase()) ?? [],
+      minTemp: analysis.minTemp,
+      maxTemp: analysis.maxTemp,
+      imageUrl: dataUrl,
+    });
+    return { ok: true };
+  };
+
+  const runBatch = async (items: { name: string; dataUrl: string }[]) => {
+    if (items.length === 0) return;
 
     setError(null);
+    setFailures([]);
     setIsAnalyzing(true);
 
-    try {
-      // Convert file to base64 data URL
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Image = reader.result as string;
-        setPhoto(base64Image);
+    const userID = localStorage.getItem('userID');
+    const newFailures: FailedUpload[] = [];
+    let succeeded = 0;
 
-        // Get userID from localStorage
-        const userID = localStorage.getItem('userID');
-        
-        // If demo user, skip AI analysis and just use the image
-        if (userID === 'demo-user-123') {
-          setIsAnalyzing(false);
-          // For demo, just add with default values
-          onAddItem({
-            name: 'New Item',
-            category: 'tops',
-            colors: ['other'],
-            style: ['casual'],
-            imageUrl: base64Image,
-          });
-          setPhoto(null);
-          setOpen(false);
-          return;
-        }
-
-        if (!userID) {
-          setError('User not authenticated');
-          setIsAnalyzing(false);
-          return;
-        }
-
-        // Call AI analysis endpoint
-        const response = await api.user.analyzeImage(userID, base64Image);
-
-        if (response.success && response.analysis) {
-          const analysis = response.analysis;
-          
-          // Map backend category to frontend category
-          const categoryMap: Record<string, ClothingCategory> = {
-            'top': 'tops',
-            'tops': 'tops',
-            'bottom': 'bottoms',
-            'bottoms': 'bottoms',
-            'shoe': 'shoes',
-            'shoes': 'shoes',
-            'coat': 'outerwear',
-            'outerwear': 'outerwear',
-            'accessory': 'accessories',
-            'accessories': 'accessories',
-            'umbrella': 'accessories',
-          };
-
-          // Add the item with AI analysis
-          onAddItem({
-            name: analysis.name || 'New Item',
-            category: categoryMap[analysis.category] || 'tops',
-            colors: analysis.colors.map((c: string) => c.toLowerCase() as Color),
-            style: analysis.styles.map((s: string) => s.toLowerCase() as EventType),
-            styles2: analysis.styles2?.map((s: string) => s.toLowerCase()) ?? [],
-            minTemp: analysis.minTemp,
-            maxTemp: analysis.maxTemp,
-            imageUrl: base64Image,
-          });
-
-          // Reset and close
-          setIsAnalyzing(false);
-          setPhoto(null);
-          setOpen(false);
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      setProgress({ current: i + 1, total: items.length, succeeded });
+      try {
+        const result = await processOne(item.name, item.dataUrl, userID);
+        if (result.ok) {
+          succeeded++;
         } else {
-          setError('Failed to analyze image. Please try again.');
+          newFailures.push({ name: item.name, dataUrl: item.dataUrl, reason: result.reason });
         }
-      };
-
-      reader.onerror = () => {
-        setError('Failed to read image file');
-        setIsAnalyzing(false);
-      };
-
-      reader.readAsDataURL(file);
-    } catch (err) {
-      console.error('Error analyzing image:', err);
-      setError('Failed to analyze image. Please try again.');
-      setIsAnalyzing(false);
+      } catch (err) {
+        console.error(`Error analyzing ${item.name}:`, err);
+        newFailures.push({
+          name: item.name,
+          dataUrl: item.dataUrl,
+          reason: err instanceof Error ? err.message : 'Unexpected error',
+        });
+      }
     }
+
+    setIsAnalyzing(false);
+    setPhoto(null);
+    setProgress(null);
+    setFailures(newFailures);
+
+    if (newFailures.length === 0) {
+      setOpen(false);
+    }
+  };
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length === 0) return;
+
+    let readFiles: { name: string; dataUrl: string }[];
+    try {
+      readFiles = await Promise.all(
+        files.map(async (file) => ({ name: file.name, dataUrl: await readFileAsDataURL(file) })),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to read image files');
+      return;
+    }
+
+    await runBatch(readFiles);
+  };
+
+  const handleRetryFailures = async () => {
+    const toRetry = failures.map(f => ({ name: f.name, dataUrl: f.dataUrl }));
+    await runBatch(toRetry);
   };
 
   return (
@@ -176,10 +214,10 @@ export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
               <div className="flex flex-col items-center justify-center pt-5 pb-6">
                 <Upload className="w-12 h-12 text-purple-600 mb-3" />
                 <p className="text-sm font-medium text-purple-900 mb-1">
-                  Click to upload photo
+                  Click to upload photos
                 </p>
                 <p className="text-xs text-purple-600">
-                  AI will analyze and add it automatically
+                  Select one or many — AI will analyze and add each one
                 </p>
               </div>
               <input
@@ -187,6 +225,7 @@ export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
                 type="file"
                 className="hidden"
                 accept="image/*"
+                multiple
                 onChange={handlePhotoUpload}
                 disabled={isAnalyzing}
               />
@@ -203,8 +242,49 @@ export function AddClothingWithPhoto({ onAddItem }: AddClothingWithPhotoProps) {
                 </div>
               )}
               <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-3" />
-              <p className="text-sm font-medium text-purple-900">Analyzing image...</p>
-              <p className="text-xs text-purple-600">This may take a few seconds</p>
+              <p className="text-sm font-medium text-purple-900">
+                {progress
+                  ? `Analyzing ${progress.current} of ${progress.total}...`
+                  : 'Analyzing image...'}
+              </p>
+              <p className="text-xs text-purple-600">
+                {progress && progress.succeeded > 0
+                  ? `${progress.succeeded} added so far`
+                  : 'Retries run automatically on Gemini failures'}
+              </p>
+            </div>
+          )}
+
+          {!isAnalyzing && failures.length > 0 && (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-2">
+              <p className="text-sm font-medium text-amber-900">
+                {failures.length} item{failures.length === 1 ? '' : 's'} failed to analyze
+              </p>
+              <ul className="text-xs text-amber-800 max-h-24 overflow-y-auto space-y-1">
+                {failures.map((f, i) => (
+                  <li key={`${f.name}-${i}`} className="truncate">
+                    • {f.name} — {f.reason}
+                  </li>
+                ))}
+              </ul>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={handleRetryFailures}
+                >
+                  Retry failed
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setFailures([])}
+                >
+                  Dismiss
+                </Button>
+              </div>
             </div>
           )}
 
