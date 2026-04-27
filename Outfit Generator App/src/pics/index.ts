@@ -29,6 +29,7 @@ import watch from './watch.jpg';
 import whiteOxford from './white-oxford.jpg';
 import whiteSneakers from './white-sneakers.jpg';
 import whiteSweats from './white-sweats.jpg';
+import logo from './logo.jpg';
 
 export const pics = {
   backpack,
@@ -61,4 +62,5 @@ export const pics = {
   whiteOxford,
   whiteSneakers,
   whiteSweats,
+  logo,
 };
