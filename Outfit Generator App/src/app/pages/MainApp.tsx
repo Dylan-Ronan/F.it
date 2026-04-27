@@ -525,6 +525,7 @@ export function MainApp() {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
+            <img src={pics.logo} alt="Logo" className="w-20 h-20 object-contain" />
             <div className="text-center flex-1">
               <div className="flex items-center justify-center gap-3 mb-2">
                 <Sparkles className="w-8 h-8 text-purple-600" />
